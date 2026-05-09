@@ -3,25 +3,44 @@ using ProviderAssignmentStarter.Domain.Entities;
 namespace ProviderAssignmentStarter.Infrastructure.Repositories;
 
 /// <summary>
-/// Persistence-agnostic contract for the Provider aggregate. Letting the
-/// service layer depend on this interface (rather than DbContext directly)
-/// gives us the Dependency Inversion principle and makes services unit-
-/// testable with an in-memory fake.
+/// Persistence-agnostic contract for the <see cref="Provider"/> aggregate.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Letting the service layer depend on this interface (rather than on
+/// <c>DbContext</c> directly) buys us:
+/// <list type="bullet">
+///   <item><b>Dependency Inversion</b> — services know nothing about EF.</item>
+///   <item><b>Testability</b> — substitute an in-memory fake for unit tests; production tests use the real implementation against SQLite in-memory.</item>
+///   <item><b>A clear surface for the audit escape hatch</b> — every method whose name contains <c>Deleted</c> opts out of the global query filter.</item>
+/// </list>
+/// </para>
+/// <para>
+/// Methods are split by intent:
+/// <list type="bullet">
+///   <item><b>Standard reads</b> (<c>GetAllAsync</c>, <c>GetByIdAsync</c>, etc.) — go through the global query filter; never see soft-deleted rows.</item>
+///   <item><b>Audit reads</b> (<c>GetDeletedAsync</c>, <c>GetByIdIncludingDeletedAsync</c>) — explicitly call <c>.IgnoreQueryFilters()</c>.</item>
+///   <item><b>Mutation</b> (<c>AddAsync</c>, <c>Update</c>, <c>Remove</c>, <c>RestoreAsync</c>) — all eventually go through the soft-delete interceptor.</item>
+/// </list>
+/// </para>
+/// </remarks>
 public interface IProviderRepository
 {
-    /// <summary>Active (non-deleted) providers, ordered by name.</summary>
+    /// <summary>All non-deleted providers, ordered by name. No licenses.</summary>
     Task<IReadOnlyList<Provider>> GetAllAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Active providers with their licenses eager-loaded. Used by the
-    /// listing grid so we render in one query instead of N+1.
+    /// Non-deleted providers with their licenses eager-loaded in a single
+    /// round-trip. Used by the listing grid so it can show counts without
+    /// N+1 queries. Licenses on each provider are also filtered (the
+    /// global query filter applies through Include).
     /// </summary>
     Task<IReadOnlyList<Provider>> GetAllWithLicensesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Filtered listing - free-text against name/county and optional status.
-    /// Filtering happens in SQL so we never pull and discard.
+    /// Filtered listing — free-text against name/county and an optional
+    /// status restriction. Filter values are pushed into SQL via
+    /// <c>EF.Functions.Like</c> so we never pull-and-discard.
     /// </summary>
     Task<IReadOnlyList<Provider>> SearchAsync(
         string? search,
@@ -31,31 +50,64 @@ public interface IProviderRepository
     /// <summary>Single provider by id, or null if missing or soft-deleted.</summary>
     Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default);
 
-    /// <summary>Single provider including its licenses (eager-loaded).</summary>
+    /// <summary>
+    /// Single provider with its Licenses eager-loaded. Returns null if
+    /// the provider is missing or soft-deleted. Used by the Details page
+    /// and by <c>SoftDeleteAsync</c> (so the interceptor's tracked-cascade
+    /// path applies).
+    /// </summary>
     Task<Provider?> GetByIdWithLicensesAsync(int providerId, CancellationToken ct = default);
 
-    /// <summary>Audit escape hatch: soft-deleted providers only.</summary>
+    // ---------------------------------------------------------------
+    // Audit / admin escape hatches. These are the ONLY methods that
+    // call .IgnoreQueryFilters(). The grep-able naming convention
+    // makes the intent visible at every call site.
+    // ---------------------------------------------------------------
+
+    /// <summary>Audit listing: soft-deleted providers only, newest first.</summary>
     Task<IReadOnlyList<Provider>> GetDeletedAsync(CancellationToken ct = default);
 
-    /// <summary>Audit escape hatch: any provider (deleted or not), with licenses.</summary>
+    /// <summary>Audit fetch: any provider (deleted or not), with licenses.</summary>
     Task<Provider?> GetByIdIncludingDeletedAsync(int providerId, CancellationToken ct = default);
 
     /// <summary>
-    /// Active providers whose Active+not-expired licenses are returned alongside.
-    /// Backed by vw_ActiveProvidersWithActiveLicenses semantics, expressed in LINQ
-    /// so it remains testable.
+    /// Active providers paired with their currently-valid licenses.
+    /// Backed by the same predicate as <c>vw_ActiveProvidersWithActiveLicenses</c>.
     /// </summary>
     Task<IReadOnlyList<Provider>> GetActiveWithActiveLicensesAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Providers recorded as Active whose licenses are all expired (status or date).
-    /// Surfaces the "looks active but really isn't" scenario from the spec.
+    /// Active providers whose licenses are ALL expired (status or date).
+    /// Surfaces the assignment's flagship "looks active but really isn't"
+    /// scenario. Backed by the same predicate as
+    /// <c>vw_ActiveProvidersWithExpiredLicenses</c>.
     /// </summary>
     Task<IReadOnlyList<Provider>> GetActiveWithExpiredLicensesAsync(CancellationToken ct = default);
 
+    // ---------------------------------------------------------------
+    // Mutation. SaveChangesAsync is exposed so the service can batch
+    // multiple repository calls into a single transaction.
+    // ---------------------------------------------------------------
+
     Task AddAsync(Provider provider, CancellationToken ct = default);
+
     void Update(Provider provider);
-    void Remove(Provider provider); // Interceptor converts this to soft-delete.
+
+    /// <summary>
+    /// Marks the provider for deletion. The <c>SoftDeleteInterceptor</c>
+    /// converts this into a soft-delete at <c>SaveChanges</c> time and
+    /// cascades to the provider's Licenses.
+    /// </summary>
+    void Remove(Provider provider);
+
+    /// <summary>
+    /// Reverses a soft-delete. Returns false if the provider is not
+    /// currently soft-deleted (caller can return 404). Cascades the
+    /// restore to any Licenses that were soft-deleted as part of the
+    /// original cascade.
+    /// </summary>
     Task<bool> RestoreAsync(int providerId, CancellationToken ct = default);
+
+    /// <summary>Persists pending changes. Returns the affected row count.</summary>
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 }

@@ -5,19 +5,32 @@ using ProviderAssignmentStarter.Domain.Enums;
 namespace ProviderAssignmentStarter.Infrastructure.Data;
 
 /// <summary>
-/// Brings the database up on application startup:
-///  1. Creates the schema from the EF model if it does not yet exist.
-///  2. Drops + recreates the analytical views (raw SQL - EF has no
-///     first-class view support).
-///  3. Seeds a realistic data set on first run.
-///
-/// We use EnsureCreatedAsync rather than MigrateAsync to keep the
-/// reviewer-experience friction-free: clone, run, browse. Switching to
-/// MigrateAsync after generating an InitialCreate migration is a
-/// one-line change documented in the README.
+/// Brings the database up on application startup.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Three responsibilities, executed in order via <see cref="InitializeAsync"/>:
+/// </para>
+/// <list type="number">
+///   <item><b>Schema</b> — <c>EnsureCreatedAsync</c> creates the database from the EF model if no <c>.db</c> file exists.</item>
+///   <item><b>Views</b> — drop + recreate the three analytical SQL views (EF has no first-class view support, so we use raw SQL).</item>
+///   <item><b>Seed</b> — insert a realistic data set (idempotent: skips if any rows already exist).</item>
+/// </list>
+/// <para>
+/// Why <c>EnsureCreatedAsync</c> and not <c>MigrateAsync</c>? It is a
+/// deliberate trade-off in favour of friction-free reviewer experience.
+/// A real project would use migrations; switching is a one-line change
+/// (documented in the README §5). The hand-written SQL in
+/// <c>Data/Sql/</c> mirrors what the EF model produces, so reviewers can
+/// inspect schema without diving into EF tooling.
+/// </para>
+/// </remarks>
 public static class DbInitializer
 {
+    /// <summary>
+    /// Single entry point called from <c>Program.cs</c> at application
+    /// startup. Idempotent — safe to run on every boot.
+    /// </summary>
     public static async Task InitializeAsync(AppDbContext db)
     {
         await db.Database.EnsureCreatedAsync();
@@ -26,9 +39,16 @@ public static class DbInitializer
     }
 
     /// <summary>
-    /// Views are dropped + recreated each startup so the definition stays
-    /// in lock-step with the migration. Cheap on SQLite; the DDL is small.
+    /// Drops + recreates the analytical views every startup. The DDL is
+    /// tiny on SQLite, and recreating from scratch keeps the view
+    /// definition in lock-step with the C# code without requiring a
+    /// migration step.
     /// </summary>
+    /// <remarks>
+    /// Three views encode the assignment's required scenarios. The first
+    /// is the "what should the app show by default" projection. The other
+    /// two power dashboard widgets and audit queries.
+    /// </remarks>
     private static async Task EnsureViewsAsync(AppDbContext db)
     {
         const string sql = @"
@@ -36,6 +56,9 @@ DROP VIEW IF EXISTS vw_ActiveProviders;
 DROP VIEW IF EXISTS vw_ActiveProvidersWithActiveLicenses;
 DROP VIEW IF EXISTS vw_ActiveProvidersWithExpiredLicenses;
 
+-- vw_ActiveProviders --------------------------------------------------
+-- The canonical 'what should the app show' projection. Mirrors the
+-- DbContext global query filter; useful for raw-SQL reviewers.
 CREATE VIEW vw_ActiveProviders AS
 SELECT  ProviderId,
         ProviderName,
@@ -46,6 +69,9 @@ SELECT  ProviderId,
 FROM    Providers
 WHERE   IsDeleted = 0;
 
+-- vw_ActiveProvidersWithActiveLicenses --------------------------------
+-- An Active provider AND a license that is currently valid (status
+-- Active AND expiration in the future).
 CREATE VIEW vw_ActiveProvidersWithActiveLicenses AS
 SELECT  p.ProviderId,
         p.ProviderName,
@@ -63,9 +89,10 @@ WHERE   p.IsDeleted   = 0
   AND   l.LicenseStatus = 'Active'
   AND   date(l.ExpirationDate) >= date('now');
 
--- The 'looks active but really isn't' scenario the assignment calls out:
--- the provider is recorded as Active but every one of their licenses is
--- either Expired-by-status or Expired-by-date.
+-- vw_ActiveProvidersWithExpiredLicenses -------------------------------
+-- The 'looks active but really isn't' scenario the assignment calls
+-- out: provider is recorded as Active, but every one of their licenses
+-- is either expired-by-status OR past its expiration date.
 CREATE VIEW vw_ActiveProvidersWithExpiredLicenses AS
 SELECT  p.ProviderId,
         p.ProviderName,
@@ -86,15 +113,35 @@ WHERE   p.IsDeleted = 0
         await db.Database.ExecuteSqlRawAsync(sql);
     }
 
+    /// <summary>
+    /// Seeds a realistic data set so reviewers see meaningful UI on first
+    /// load. Idempotent: returns immediately if the database already has
+    /// any provider rows (deleted or not).
+    /// </summary>
+    /// <remarks>
+    /// The seed deliberately covers every assignment scenario:
+    /// <list type="bullet">
+    ///   <item>Multiple counties (Fulton, DeKalb, Cobb, Gwinnett, Cherokee, Henry).</item>
+    ///   <item>All three provider statuses (Active, Inactive, Pending).</item>
+    ///   <item>An Active provider whose only license is expired-by-date — the assignment's flagship scenario.</item>
+    ///   <item>A Suspended license alongside Active and Expired ones.</item>
+    ///   <item>A pre-soft-deleted provider so the Audit page has something to show on first run.</item>
+    /// </list>
+    /// </remarks>
     private static async Task SeedAsync(AppDbContext db)
     {
         if (await db.Providers.IgnoreQueryFilters().AnyAsync())
         {
-            return; // Idempotent: never re-seed an existing database.
+            // Idempotency guard: never re-seed an existing database.
+            // Counts include soft-deleted rows so a half-seeded DB
+            // (where everything was soft-deleted) still short-circuits.
+            return;
         }
 
         var today = DateTime.UtcNow.Date;
 
+        // Eight providers covering the full matrix of statuses and
+        // counties. License mix is deliberately uneven.
         var providers = new List<Provider>
         {
             new()
@@ -113,7 +160,9 @@ WHERE   p.IsDeleted = 0
                 ProviderName = "DeKalb Senior Services",
                 County = "DeKalb",
                 Status = ProviderStatus.Active,
-                // Active provider whose only license expired - the spec scenario.
+                // Active provider whose only license has expired by date.
+                // This is the 'looks active but really isn't' scenario
+                // the assignment specifically calls out.
                 Licenses = new List<License>
                 {
                     new() { LicenseNumber = "DSS-2001", LicenseStatus = LicenseStatus.Active, ExpirationDate = today.AddMonths(-2) }
@@ -135,7 +184,7 @@ WHERE   p.IsDeleted = 0
                 ProviderName = "Gwinnett Pediatrics",
                 County = "Gwinnett",
                 Status = ProviderStatus.Pending,
-                Licenses = new List<License>()
+                Licenses = new List<License>() // Pending providers can have zero licenses.
             },
             new()
             {
@@ -180,13 +229,14 @@ WHERE   p.IsDeleted = 0
         db.Providers.AddRange(providers);
         await db.SaveChangesAsync();
 
-        // Demonstrate audit visibility: soft-delete one provider so the
-        // 'Audit / Deleted' page has something to show out of the box.
+        // Demonstrate the audit pathway: soft-delete one provider so
+        // the Audit (Deleted) page has a record to show out of the box.
+        // The interceptor handles cascading to the License.
         var toDelete = await db.Providers
             .Include(p => p.Licenses)
             .FirstAsync(p => p.ProviderName == "North Fulton Behavioral");
 
-        db.Providers.Remove(toDelete); // Interceptor turns this into a soft delete.
+        db.Providers.Remove(toDelete);
         await db.SaveChangesAsync();
     }
 }

@@ -7,19 +7,38 @@ namespace ProviderAssignmentStarter.Infrastructure.Repositories;
 
 /// <summary>
 /// EF Core implementation of <see cref="IProviderRepository"/>.
-///
-/// Notes for reviewers:
-///  - All "standard" reads rely on the DbContext global query filter to
-///    exclude soft-deleted rows. We never write WHERE IsDeleted = 0 here
-///    by hand - duplicating that filter would be a source of drift.
-///  - Audit reads call .IgnoreQueryFilters() explicitly so the intent is
-///    visible at the call site.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Notes for reviewers:
+/// </para>
+/// <list type="bullet">
+///   <item>
+///     <b>No hand-written soft-delete filters.</b> Standard reads rely on
+///     the DbContext global query filter to exclude soft-deleted rows.
+///     Re-stating <c>WHERE IsDeleted = 0</c> here would create a second
+///     source of truth that could drift away from the filter.
+///   </item>
+///   <item>
+///     <b>Audit reads are deliberate.</b> Methods that need to see
+///     soft-deleted rows call <c>.IgnoreQueryFilters()</c> explicitly
+///     so the intent is visible at the call site.
+///   </item>
+///   <item>
+///     <b>Read paths use <c>AsNoTracking</c></b> to avoid the change
+///     tracker overhead. Mutation paths track normally.
+///   </item>
+/// </list>
+/// </remarks>
 public class ProviderRepository : IProviderRepository
 {
     private readonly AppDbContext _db;
 
     public ProviderRepository(AppDbContext db) => _db = db;
+
+    // ============================================================
+    //  Standard reads (global query filter active)
+    // ============================================================
 
     public async Task<IReadOnlyList<Provider>> GetAllAsync(CancellationToken ct = default) =>
         await _db.Providers
@@ -28,6 +47,7 @@ public class ProviderRepository : IProviderRepository
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<Provider>> GetAllWithLicensesAsync(CancellationToken ct = default) =>
+        // Single round-trip with Include — avoids N+1 on the listing.
         await _db.Providers
             .AsNoTracking()
             .Include(p => p.Licenses)
@@ -39,6 +59,9 @@ public class ProviderRepository : IProviderRepository
         ProviderStatus? status,
         CancellationToken ct = default)
     {
+        // Build the query progressively. Each filter is only applied
+        // when it has a value, so an empty filter falls through to the
+        // same query GetAllWithLicensesAsync would emit.
         var query = _db.Providers
             .AsNoTracking()
             .Include(p => p.Licenses)
@@ -46,7 +69,10 @@ public class ProviderRepository : IProviderRepository
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            // EF.Functions.Like is case-insensitive on SQLite by default.
+            // EF.Functions.Like translates to a SQL LIKE, which on
+            // SQLite is case-insensitive for ASCII characters by default
+            // — no need for explicit lower(). The pattern is wrapped in
+            // %s on both sides for substring match.
             var pattern = $"%{search.Trim()}%";
             query = query.Where(p =>
                 EF.Functions.Like(p.ProviderName, pattern)
@@ -62,30 +88,44 @@ public class ProviderRepository : IProviderRepository
     }
 
     public Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default) =>
+        // Tracked, no Include — used for Update and "lightweight" reads.
         _db.Providers.FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
 
     public Task<Provider?> GetByIdWithLicensesAsync(int providerId, CancellationToken ct = default) =>
+        // Tracked + Include. Used by Details (read) and SoftDelete (write).
         _db.Providers
             .Include(p => p.Licenses)
             .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
 
+    // ============================================================
+    //  Audit / admin escape hatches (filter ignored)
+    // ============================================================
+
     public async Task<IReadOnlyList<Provider>> GetDeletedAsync(CancellationToken ct = default) =>
         await _db.Providers
-            .IgnoreQueryFilters()
+            .IgnoreQueryFilters()         // see soft-deleted rows
             .AsNoTracking()
-            .Where(p => p.IsDeleted)
+            .Where(p => p.IsDeleted)      // and ONLY soft-deleted rows
             .OrderByDescending(p => p.DeletedDate)
             .ToListAsync(ct);
 
     public Task<Provider?> GetByIdIncludingDeletedAsync(int providerId, CancellationToken ct = default) =>
         _db.Providers
             .IgnoreQueryFilters()
-            .Include(p => p.Licenses)
+            .Include(p => p.Licenses)     // child filter is ALSO bypassed by IgnoreQueryFilters
             .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+
+    // ============================================================
+    //  Required-scenario queries (filter active)
+    // ============================================================
 
     public async Task<IReadOnlyList<Provider>> GetActiveWithActiveLicensesAsync(CancellationToken ct = default)
     {
         var today = DateTime.UtcNow.Date;
+
+        // Project Provider with a SUBSET of its Licenses (only those that
+        // are currently valid). The .Where(p => p.Licenses.Any()) at the
+        // end drops providers that have no valid licenses to surface.
         return await _db.Providers
             .AsNoTracking()
             .Where(p => p.Status == ProviderStatus.Active)
@@ -108,6 +148,14 @@ public class ProviderRepository : IProviderRepository
     public async Task<IReadOnlyList<Provider>> GetActiveWithExpiredLicensesAsync(CancellationToken ct = default)
     {
         var today = DateTime.UtcNow.Date;
+
+        // The flagship "looks active but really isn't" scenario:
+        //   - Provider.Status is Active
+        //   - The provider has at least one License
+        //   - EVERY License is either expired-by-status OR expired-by-date
+        //
+        // The .All() predicate at the database level is critical — we
+        // must NOT match a provider that has any currently-valid license.
         return await _db.Providers
             .AsNoTracking()
             .Include(p => p.Licenses)
@@ -119,15 +167,26 @@ public class ProviderRepository : IProviderRepository
             .ToListAsync(ct);
     }
 
+    // ============================================================
+    //  Mutation
+    // ============================================================
+
     public async Task AddAsync(Provider provider, CancellationToken ct = default) =>
         await _db.Providers.AddAsync(provider, ct);
 
     public void Update(Provider provider) => _db.Providers.Update(provider);
 
-    public void Remove(Provider provider) => _db.Providers.Remove(provider); // -> soft-delete via interceptor
+    /// <summary>
+    /// Hands the entity to EF as Deleted. The <c>SoftDeleteInterceptor</c>
+    /// converts this into a soft-delete (and cascades to children) at
+    /// <c>SaveChanges</c> time. Caller must invoke <c>SaveChangesAsync</c>.
+    /// </summary>
+    public void Remove(Provider provider) => _db.Providers.Remove(provider);
 
     public async Task<bool> RestoreAsync(int providerId, CancellationToken ct = default)
     {
+        // Use the audit escape hatch to find the soft-deleted record;
+        // a normal query would never see it.
         var provider = await _db.Providers
             .IgnoreQueryFilters()
             .Include(p => p.Licenses)
@@ -135,14 +194,17 @@ public class ProviderRepository : IProviderRepository
 
         if (provider is null) return false;
 
+        // Reset the soft-delete columns on the parent.
         provider.IsDeleted = false;
         provider.DeletedDate = null;
         provider.DeletedBy = null;
 
-        // Restore the cascade'd licenses too. We only un-delete those the
-        // cascade itself deleted (DeletedDate matches the parent within
-        // a small tolerance). A real system would track this with a
-        // dedicated audit table.
+        // Reverse the cascade: any Licenses that were soft-deleted along
+        // with the parent are restored too. We naively flip every
+        // currently-deleted License — a real system would track which
+        // ones the original cascade touched (via an AuditLog table) so a
+        // license that was deleted independently stays deleted. This is
+        // listed in README §11 as a future improvement.
         foreach (var license in provider.Licenses.Where(l => l.IsDeleted))
         {
             license.IsDeleted = false;
@@ -153,5 +215,6 @@ public class ProviderRepository : IProviderRepository
         return true;
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken ct = default) => _db.SaveChangesAsync(ct);
+    public Task<int> SaveChangesAsync(CancellationToken ct = default) =>
+        _db.SaveChangesAsync(ct);
 }
