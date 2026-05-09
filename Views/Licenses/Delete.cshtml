@@ -1,0 +1,23 @@
+@model LicenseListItemVm
+@{
+    ViewData["Title"] = $"Delete License · {Model.LicenseNumber}";
+}
+
+<h1 class="h3 text-danger mb-3">Soft-Delete License</h1>
+
+<div class="alert alert-warning">
+    This will soft-delete license <strong>@Model.LicenseNumber</strong> for provider
+    <strong>@Model.ProviderName</strong>. The record remains in the database for audit.
+</div>
+
+<dl class="row">
+    <dt class="col-sm-3">License #</dt><dd class="col-sm-9">@Model.LicenseNumber</dd>
+    <dt class="col-sm-3">Status</dt><dd class="col-sm-9">@Model.LicenseStatus</dd>
+    <dt class="col-sm-3">Expiration</dt><dd class="col-sm-9">@Model.ExpirationDate.ToString("yyyy-MM-dd")</dd>
+</dl>
+
+<form asp-action="Delete" asp-route-id="@Model.LicenseId" method="post">
+    <input type="hidden" name="providerId" value="@Model.ProviderId" />
+    <button type="submit" class="btn btn-danger">Confirm Soft-Delete</button>
+    <a asp-controller="Providers" asp-action="Details" asp-route-id="@Model.ProviderId" class="btn btn-link">Cancel</a>
+</form>

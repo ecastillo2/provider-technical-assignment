@@ -1,8 +1,40 @@
-﻿@{
-    ViewData["Title"] = "Home Page";
+@{
+    ViewData["Title"] = "Home";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="px-4 py-5 my-3 text-center">
+    <h1 class="display-5 fw-bold">Provider Management</h1>
+    <div class="col-lg-8 mx-auto">
+        <p class="lead mb-4">
+            Manage state-licensed providers and their licenses. Built with ASP.NET Core MVC,
+            EF Core, and SQLite, with soft-delete enforced at the database, query, and
+            interceptor layers.
+        </p>
+        <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+            <a asp-controller="Dashboard" asp-action="Index" class="btn btn-primary btn-lg px-4 gap-3">
+                Open Dashboard
+            </a>
+            <a asp-controller="Providers" asp-action="Index" class="btn btn-outline-secondary btn-lg px-4">
+                Browse Providers
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <h4>Soft-delete by design</h4>
+        <p>Hard deletion is disallowed by policy. Providers and licenses are flagged
+           IsDeleted, hidden from standard queries, and remain queryable for audit.</p>
+    </div>
+    <div class="col-md-4">
+        <h4>Audit-safe</h4>
+        <p>Deleted records are visible from the <a asp-controller="Providers" asp-action="Deleted">Audit page</a>
+           and can be restored. Cascade soft-delete keeps parent and child records in sync.</p>
+    </div>
+    <div class="col-md-4">
+        <h4>Architectural separation</h4>
+        <p>Domain, Infrastructure, Services, and Web layers are split by folder. Controllers
+           depend on services; services depend on repositories; repositories own EF Core.</p>
+    </div>
 </div>

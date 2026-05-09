@@ -1,0 +1,51 @@
+@model IReadOnlyList<ProviderListItemVm>
+@{
+    ViewData["Title"] = "Audit · Deleted Providers";
+}
+
+<h1 class="h3 mb-3">Audit · Deleted Providers</h1>
+
+<p class="text-muted small">
+    These records are soft-deleted and excluded from standard listings. They
+    remain in the database for audit and may be restored.
+</p>
+
+@if (!Model.Any())
+{
+    <div class="alert alert-info">No deleted providers.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>County</th>
+                    <th>Status</th>
+                    <th>Deleted At</th>
+                    <th>Deleted By</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var p in Model)
+            {
+                <tr>
+                    <td>@p.ProviderName</td>
+                    <td>@p.County</td>
+                    <td>@p.Status</td>
+                    <td>@(p.DeletedDate?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                    <td>@(p.DeletedBy ?? "—")</td>
+                    <td class="text-end">
+                        <a asp-action="AuditDetails" asp-route-id="@p.ProviderId" class="btn btn-sm btn-outline-secondary">View</a>
+                        <form asp-action="Restore" asp-route-id="@p.ProviderId" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-success">Restore</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

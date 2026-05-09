@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v dotnet)",
+      "Bash(dotnet --version)",
+      "Read(//usr/lib/**)",
+      "Read(//home/erick/**)",
+      "Bash(curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh)",
+      "Bash(chmod +x dotnet-install.sh)",
+      "Bash(./dotnet-install.sh --channel 8.0 --install-dir __TRACKED_VAR__/.dotnet)",
+      "Bash(export DOTNET_ROOT=\"$HOME/.dotnet\")",
+      "Bash(export PATH=\"$PATH:$HOME/.dotnet:$HOME/.dotnet/tools\")",
+      "Bash(dotnet --info)",
+      "Bash(dotnet build *)",
+      "Bash(powershell.exe -Command \"Get-NetTCPConnection -LocalPort 5236 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess,State; Get-Process -Id \\(Get-NetTCPConnection -LocalPort 5236 -ErrorAction SilentlyContinue\\).OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Path\")",
+      "Bash(powershell.exe *)"
+    ]
+  }
+}

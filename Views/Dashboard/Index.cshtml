@@ -1,0 +1,142 @@
+@model DashboardVm
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<h1 class="h3 mb-3">Dashboard</h1>
+<p class="text-muted small">
+    All metrics are computed by the backend (DashboardService). The view only renders.
+    Soft-deleted records are excluded automatically by the global query filter.
+</p>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card border-primary"><div class="card-body">
+        <div class="text-muted small">Total Providers</div>
+        <div class="display-6">@Model.TotalProviders</div>
+    </div></div></div>
+
+    <div class="col-md-3"><div class="card border-success"><div class="card-body">
+        <div class="text-muted small">Active Providers</div>
+        <div class="display-6">@Model.ActiveProviderCount</div>
+    </div></div></div>
+
+    <div class="col-md-3"><div class="card border-info"><div class="card-body">
+        <div class="text-muted small">Total Licenses</div>
+        <div class="display-6">@Model.TotalLicenses</div>
+    </div></div></div>
+
+    <div class="col-md-3"><div class="card border-danger"><div class="card-body">
+        <div class="text-muted small">Active Providers w/ Expired Licenses</div>
+        <div class="display-6">@Model.ActiveProvidersWithExpiredLicensesCount</div>
+        <div class="small text-muted">"Looks active but isn't"</div>
+    </div></div></div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card"><div class="card-body">
+            <h5 class="card-title">Providers by Status</h5>
+            <canvas id="providerStatusChart" height="220"></canvas>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card"><div class="card-body">
+            <h5 class="card-title">Licenses by Validity</h5>
+            <canvas id="licenseChart" height="220"></canvas>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="card"><div class="card-body">
+            <h5 class="card-title">Licenses Expiring in 30 Days</h5>
+            @if (!Model.ExpiringSoon.Any())
+            {
+                <div class="text-muted small">No licenses expiring in the next 30 days.</div>
+            }
+            else
+            {
+                <table class="table table-sm">
+                    <thead><tr><th>Provider</th><th>License #</th><th class="text-end">Days</th></tr></thead>
+                    <tbody>
+                    @foreach (var l in Model.ExpiringSoon)
+                    {
+                        <tr>
+                            <td>@l.ProviderName</td>
+                            <td>@l.LicenseNumber</td>
+                            <td class="text-end">@l.DaysUntilExpiration</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-danger"><div class="card-body">
+            <h5 class="card-title">Active Providers w/ Expired Licenses</h5>
+            <p class="small text-muted mb-2">
+                Backed by <code>vw_ActiveProvidersWithExpiredLicenses</code>.
+            </p>
+            @if (!Model.ActiveProvidersWithExpiredLicenses.Any())
+            {
+                <div class="text-muted small">None — no provider in this state.</div>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                @foreach (var p in Model.ActiveProvidersWithExpiredLicenses)
+                {
+                    <li class="list-group-item d-flex justify-content-between">
+                        <a asp-controller="Providers" asp-action="Details" asp-route-id="@p.ProviderId">@p.ProviderName</a>
+                        <span class="badge bg-danger">@p.ExpiredLicenseCount expired</span>
+                    </li>
+                }
+                </ul>
+            }
+        </div></div>
+    </div>
+</div>
+
+@section Scripts {
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const providerCounts = {
+        active:   @Model.ActiveProviderCount,
+        inactive: @Model.InactiveProviderCount,
+        pending:  @Model.PendingProviderCount
+    };
+    const licenseCounts = {
+        active:    @Model.ActiveLicenseCount,
+        expired:   @Model.ExpiredLicenseCount,
+        suspended: @Model.SuspendedLicenseCount
+    };
+
+    new Chart(document.getElementById('providerStatusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Active', 'Inactive', 'Pending'],
+            datasets: [{
+                data: [providerCounts.active, providerCounts.inactive, providerCounts.pending],
+                backgroundColor: ['#198754', '#6c757d', '#ffc107']
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+
+    new Chart(document.getElementById('licenseChart'), {
+        type: 'bar',
+        data: {
+            labels: ['Active (valid)', 'Expired', 'Suspended'],
+            datasets: [{
+                label: 'Licenses',
+                data: [licenseCounts.active, licenseCounts.expired, licenseCounts.suspended],
+                backgroundColor: ['#198754', '#dc3545', '#ffc107']
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } },
+                   scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+</script>
+}

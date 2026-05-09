@@ -1,0 +1,95 @@
+@model ProviderDetailsVm
+@{
+    ViewData["Title"] = $"Provider · {Model.ProviderName}";
+}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <h1 class="h3 mb-1">@Model.ProviderName</h1>
+        <div class="text-muted small">@Model.County County · ID #@Model.ProviderId</div>
+    </div>
+    <div>
+        <a asp-action="Edit" asp-route-id="@Model.ProviderId" class="btn btn-outline-primary">Edit</a>
+        <a asp-action="Delete" asp-route-id="@Model.ProviderId" class="btn btn-outline-danger">Soft-Delete</a>
+        <a asp-action="Index" class="btn btn-link">Back to list</a>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3"><strong>Status:</strong>
+        @switch (Model.Status)
+        {
+            case ProviderStatus.Active:   <span class="badge bg-success">Active</span>   break;
+            case ProviderStatus.Inactive: <span class="badge bg-secondary">Inactive</span> break;
+            case ProviderStatus.Pending:  <span class="badge bg-warning text-dark">Pending</span> break;
+        }
+    </div>
+    <div class="col-md-4"><strong>Created:</strong> @Model.CreatedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</div>
+    <div class="col-md-4">
+        @if (Model.ModifiedDate.HasValue)
+        {
+            <strong>Modified:</strong> @Model.ModifiedDate.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+        }
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h5 mb-0">Licenses</h2>
+    <a asp-controller="Licenses" asp-action="Create" asp-route-providerId="@Model.ProviderId" class="btn btn-sm btn-primary">
+        + Add License
+    </a>
+</div>
+
+@if (!Model.Licenses.Any())
+{
+    <div class="alert alert-light border">No licenses on file for this provider.</div>
+}
+else
+{
+    <table class="table table-sm table-striped align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>License #</th>
+                <th>Status</th>
+                <th>Expiration</th>
+                <th>Validity</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var l in Model.Licenses)
+        {
+            <tr>
+                <td>@l.LicenseNumber</td>
+                <td>
+                    @switch (l.LicenseStatus)
+                    {
+                        case LicenseStatus.Active:    <span class="badge bg-success">Active</span> break;
+                        case LicenseStatus.Expired:   <span class="badge bg-danger">Expired</span> break;
+                        case LicenseStatus.Suspended: <span class="badge bg-warning text-dark">Suspended</span> break;
+                    }
+                </td>
+                <td>@l.ExpirationDate.ToString("yyyy-MM-dd")</td>
+                <td>
+                    @if (l.IsCurrentlyValid)
+                    {
+                        <span class="text-success">Currently valid (@l.DaysUntilExpiration days left)</span>
+                    }
+                    else if (l.LicenseStatus == LicenseStatus.Active && l.DaysUntilExpiration < 0)
+                    {
+                        <span class="text-danger">Expired by date · @(-l.DaysUntilExpiration) days ago</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not valid</span>
+                    }
+                </td>
+                <td class="text-end">
+                    <a asp-controller="Licenses" asp-action="Edit" asp-route-id="@l.LicenseId" class="btn btn-sm btn-outline-primary">Edit</a>
+                    <a asp-controller="Licenses" asp-action="Delete" asp-route-id="@l.LicenseId" class="btn btn-sm btn-outline-danger">Delete</a>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

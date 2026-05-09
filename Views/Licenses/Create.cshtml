@@ -1,0 +1,38 @@
+@model LicenseEditVm
+@{
+    ViewData["Title"] = "New License";
+}
+
+<h1 class="h3 mb-3">Add License</h1>
+<p class="text-muted">For provider: <strong>@Model.ProviderName</strong></p>
+
+<form asp-action="Create" method="post" class="col-md-8">
+    <input type="hidden" asp-for="ProviderId" />
+    <input type="hidden" asp-for="ProviderName" />
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+    <div class="mb-3">
+        <label asp-for="LicenseNumber" class="form-label"></label>
+        <input asp-for="LicenseNumber" class="form-control" autofocus />
+        <span asp-validation-for="LicenseNumber" class="text-danger small"></span>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="LicenseStatus" class="form-label"></label>
+        <select asp-for="LicenseStatus" asp-items="Html.GetEnumSelectList<LicenseStatus>()" class="form-select"></select>
+        <span asp-validation-for="LicenseStatus" class="text-danger small"></span>
+    </div>
+
+    <div class="mb-3">
+        <label asp-for="ExpirationDate" class="form-label"></label>
+        <input asp-for="ExpirationDate" class="form-control" type="date" />
+        <span asp-validation-for="ExpirationDate" class="text-danger small"></span>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Add License</button>
+        <a asp-controller="Providers" asp-action="Details" asp-route-id="@Model.ProviderId" class="btn btn-link">Cancel</a>
+    </div>
+</form>
+
+@section Scripts { @{ await Html.RenderPartialAsync("_ValidationScriptsPartial"); } }
