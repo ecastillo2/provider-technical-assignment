@@ -60,8 +60,18 @@ public class ProviderConfiguration : IEntityTypeConfiguration<Provider>
         builder.HasMany(p => p.Licenses)
             .WithOne(l => l.Provider)
             .HasForeignKey(l => l.ProviderId)
-            // We never hard-delete; cascade-delete would conflict with
-            // soft-delete semantics. The interceptor handles cascading.
-            .OnDelete(DeleteBehavior.Restrict);
+            // ClientCascade is the right fit for soft-delete:
+            //   - Database-level: NO cascade. We never hard-delete a row,
+            //     and the FK should reject orphaning. (At DB level this
+            //     translates to NO ACTION, equivalent to RESTRICT.)
+            //   - Client-level: when a Provider's tracked state goes to
+            //     Deleted, EF marks its tracked Licenses as Deleted too.
+            //     Our SoftDeleteInterceptor then flips ALL Deleted
+            //     entities (parent + children) to Modified+IsDeleted=true.
+            //
+            // Restrict here would be incorrect: EF rejects Remove(parent)
+            // synchronously because the children's required FK would be
+            // severed - the interceptor never gets a chance to run.
+            .OnDelete(DeleteBehavior.ClientCascade);
     }
 }
