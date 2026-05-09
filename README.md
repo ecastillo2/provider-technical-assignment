@@ -15,7 +15,7 @@ the trade-offs made.
 - .NET 8 SDK
 - (Optional) `sqlite3` CLI if you want to inspect the database file by hand
 
-### Run
+### Run the application
 ```bash
 git clone <repo-url>
 cd ProviderAssignmentStarter
@@ -24,16 +24,6 @@ dotnet restore
 dotnet run --project ProviderAssignmentStarter.csproj
 ```
 
-### Run the test suite
-```bash
-dotnet test
-```
-
-The test project (`Tests/ProviderAssignmentStarter.Tests`) runs against
-real SQLite (in-memory) so the soft-delete, cascade, and audit behaviour
-under test exercises the same save pipeline as production. See
-[Section 12 — Tests](#12-tests) for what they cover.
-
 On first run, the application will:
 
 1. Create `Data/providers.db` (if missing) from the EF Core model.
@@ -41,11 +31,20 @@ On first run, the application will:
 3. Seed ~8 providers and ~9 licenses, plus one soft-deleted provider so
    the **Audit** page has something to show out of the box.
 
-Open https://localhost:7xxx (port shown in the console) and navigate via
-the top nav — **Dashboard**, **Providers**, **Audit (Deleted)**.
+Open the URL shown in the console output and navigate via the top
+navigation — **Dashboard**, **Providers**, **Audit (Deleted)**, **About**.
 
 If you prefer EF migrations over `EnsureCreated()`, see
 [Database delivery options](#5-database-delivery) below.
+
+### Run the test suite
+```bash
+dotnet test
+```
+
+20 xUnit tests run against real SQLite (in-memory) — the same save
+pipeline as production. See [Section 12 — Tests](#12-tests) for what
+they cover.
 
 ---
 
@@ -251,7 +250,8 @@ path for reviewers who want to inspect the DDL without diving into EF.
 
 | Scenario | Implementation |
 |---|---|
-| Active providers, soft-deleted excluded | `IProviderService.ListAsync()` → `ProviderRepository.GetAllAsync()`. The global query filter handles soft-delete exclusion automatically. |
+| Active providers, soft-deleted excluded | `IProviderService.ListAsync()` → `ProviderRepository.GetAllWithLicensesAsync()` (single round-trip with `Include`). The global query filter handles soft-delete exclusion automatically. |
+| Active providers, filtered by name/county/status | `ProviderService.SearchAsync(filter)` → `ProviderRepository.SearchAsync()`, applying `EF.Functions.Like` and a status predicate in SQL. |
 | Active providers + their active licenses | `ProviderRepository.GetActiveWithActiveLicensesAsync()` — also expressed in `vw_ActiveProvidersWithActiveLicenses`. |
 | Active providers with expired licenses ("looks active but isn't") | `ProviderRepository.GetActiveWithExpiredLicensesAsync()` and `vw_ActiveProvidersWithExpiredLicenses`. Surfaced on the Dashboard as a top-level metric. |
 | Audit / soft-deleted records | `ProviderRepository.GetDeletedAsync()` (uses `.IgnoreQueryFilters()`). Surfaced via `Providers/Deleted` and `Providers/AuditDetails/{id}`. |
@@ -359,16 +359,16 @@ the jsDelivr CDN — no extra build step.
   and the Audit page is gated to admins only.
 - **Dedicated `AuditLog` table** capturing every state change with old
   and new values, instead of just the `IsDeleted`/`DeletedDate` columns.
-- **Server-side paging, sorting, and column filters** on the listing.
-- **Integration tests** against the SQLite file — round-trip through the
-  interceptor to assert hard-deletes are impossible and the cascade fires.
-- **Unit tests** for `ProviderService` using a fake repository, and for
-  the soft-delete query filter behaviour.
+- **Server-side paging and sortable columns** on the Providers listing
+  (search and status filter are already implemented).
 - **Generated EF migration** instead of `EnsureCreated`, with a CI step
   that verifies the migration produces the same schema as the model.
-- **Health-check + structured logging** (Serilog) for production-support.
+- **Health-check endpoint + structured logging** (Serilog) for
+  production-support readiness.
 - **Docker Compose** so a reviewer with no .NET SDK can still
   `docker compose up`.
+- **Component-level UI tests** (e.g. Playwright) covering the audit
+  flow end-to-end through Razor.
 
 ---
 

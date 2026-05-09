@@ -23,3 +23,8 @@ coverage.xml
 # Note: Data/providers.db is intentionally NOT ignored.
 # The assignment requires shipping the SQLite database file with the
 # submission so reviewers can run the app without first launching it.
+# But the SQLite write-ahead log / shared-memory sidecar files ARE
+# transient and must never be committed.
+*.db-shm
+*.db-wal
+*.db-journal
