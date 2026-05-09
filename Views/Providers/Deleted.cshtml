@@ -12,7 +12,13 @@
 
 @if (!Model.Any())
 {
-    <div class="alert alert-info">No deleted providers.</div>
+    <div class="alert alert-info mb-0">
+        <strong>Nothing in the audit bin.</strong>
+        No providers have been soft-deleted.
+        Soft-delete a provider from the
+        <a asp-action="Index" class="alert-link">main listing</a>
+        to see how the audit + restore flow works.
+    </div>
 }
 else
 {

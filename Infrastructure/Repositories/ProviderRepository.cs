@@ -34,6 +34,33 @@ public class ProviderRepository : IProviderRepository
             .OrderBy(p => p.ProviderName)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Provider>> SearchAsync(
+        string? search,
+        ProviderStatus? status,
+        CancellationToken ct = default)
+    {
+        var query = _db.Providers
+            .AsNoTracking()
+            .Include(p => p.Licenses)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // EF.Functions.Like is case-insensitive on SQLite by default.
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(p =>
+                EF.Functions.Like(p.ProviderName, pattern)
+                || EF.Functions.Like(p.County, pattern));
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(p => p.Status == status.Value);
+        }
+
+        return await query.OrderBy(p => p.ProviderName).ToListAsync(ct);
+    }
+
     public Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default) =>
         _db.Providers.FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
 

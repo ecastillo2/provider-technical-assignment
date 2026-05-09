@@ -19,10 +19,19 @@ public class ProvidersController : Controller
         _logger    = logger;
     }
 
-    // GET /Providers
-    public async Task<IActionResult> Index(CancellationToken ct)
+    // GET /Providers?Search=...&Status=Active
+    // Filter values are bound from querystring so any filtered URL is shareable.
+    public async Task<IActionResult> Index(
+        [FromQuery] ProviderListFilter? filter,
+        CancellationToken ct = default)
     {
-        var rows = await _providers.ListAsync(ct);
+        filter ??= new ProviderListFilter();
+
+        var rows = filter.HasFilter
+            ? await _providers.SearchAsync(filter, ct)
+            : await _providers.ListAsync(ct);
+
+        ViewData["Filter"] = filter;
         return View(rows);
     }
 

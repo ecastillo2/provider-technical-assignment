@@ -10,6 +10,11 @@ namespace ProviderAssignmentStarter.Services;
 public interface IProviderService
 {
     Task<IReadOnlyList<ProviderListItemVm>> ListAsync(CancellationToken ct = default);
+
+    /// <summary>Filtered listing for the search/filter form on the Index page.</summary>
+    Task<IReadOnlyList<ProviderListItemVm>> SearchAsync(
+        ProviderListFilter filter,
+        CancellationToken ct = default);
     Task<IReadOnlyList<ProviderListItemVm>> ListDeletedAsync(CancellationToken ct = default);
     Task<ProviderDetailsVm?> GetDetailsAsync(int providerId, CancellationToken ct = default);
     Task<ProviderDetailsVm?> GetDetailsIncludingDeletedAsync(int providerId, CancellationToken ct = default);

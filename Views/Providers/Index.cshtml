@@ -1,6 +1,7 @@
 @model IReadOnlyList<ProviderListItemVm>
 @{
     ViewData["Title"] = "Providers";
+    var filter = ViewData["Filter"] as ProviderListFilter ?? new ProviderListFilter();
 }
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -13,12 +14,59 @@
     query filter). Visit <a asp-action="Deleted">Audit</a> to view or restore them.
 </p>
 
+<form method="get" class="row g-2 align-items-end mb-3">
+    <div class="col-md-5">
+        <label for="Search" class="form-label small text-muted mb-1">Search by name or county</label>
+        <input type="text" class="form-control" id="Search" name="Search"
+               value="@filter.Search" placeholder="e.g. Atlanta, Fulton" />
+    </div>
+    <div class="col-md-3">
+        <label for="Status" class="form-label small text-muted mb-1">Status</label>
+        <select class="form-select" id="Status" name="Status">
+            <option value="">— Any —</option>
+            @foreach (var s in Enum.GetValues<ProviderStatus>())
+            {
+                if (filter.Status == s)
+                {
+                    <option value="@s" selected>@s</option>
+                }
+                else
+                {
+                    <option value="@s">@s</option>
+                }
+            }
+        </select>
+    </div>
+    <div class="col-md-4 d-flex gap-2">
+        <button type="submit" class="btn btn-outline-primary">Apply</button>
+        @if (filter.HasFilter)
+        {
+            <a asp-action="Index" class="btn btn-outline-secondary">Clear</a>
+        }
+    </div>
+</form>
+
 @if (!Model.Any())
 {
-    <div class="alert alert-info">No providers yet. Click "New Provider" to add one.</div>
+    if (filter.HasFilter)
+    {
+        <div class="alert alert-info">
+            No providers match the current filter.
+            <a asp-action="Index" class="alert-link">Clear filter</a> to see everything.
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info">
+            No providers yet. <a asp-action="Create" class="alert-link">Create your first one</a>.
+        </div>
+    }
 }
 else
 {
+    <div class="text-muted small mb-2">
+        Showing @Model.Count provider@(Model.Count == 1 ? "" : "s")@(filter.HasFilter ? " (filtered)" : "").
+    </div>
     <div class="table-responsive">
         <table class="table table-striped table-hover align-middle">
             <thead class="table-light">

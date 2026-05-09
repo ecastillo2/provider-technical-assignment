@@ -21,8 +21,18 @@ git clone <repo-url>
 cd ProviderAssignmentStarter
 git checkout <feature-branch>
 dotnet restore
-dotnet run
+dotnet run --project ProviderAssignmentStarter.csproj
 ```
+
+### Run the test suite
+```bash
+dotnet test
+```
+
+The test project (`Tests/ProviderAssignmentStarter.Tests`) runs against
+real SQLite (in-memory) so the soft-delete, cascade, and audit behaviour
+under test exercises the same save pipeline as production. See
+[Section 12 — Tests](#12-tests) for what they cover.
 
 On first run, the application will:
 
@@ -306,7 +316,23 @@ the jsDelivr CDN — no extra build step.
 
 ---
 
-## 9. Assumptions & trade-offs
+## 9. UX features worth calling out
+
+- **Search + status filter** on the Providers listing. Filter values
+  flow through the URL querystring so any filtered view is shareable.
+  Filtering happens in SQL (via `EF.Functions.Like`) — no in-memory
+  scans.
+- **Custom `[NotInPast]` validation attribute** on the License create
+  form. Edit forms intentionally allow past dates so admins can correct
+  historical data; the attribute knows which mode it is in by inspecting
+  the VM's id property. Covered by `NotInPastAttributeTests`.
+- **Cascade-soft-delete + restore** so the audit page is reversible.
+- **Flash messaging** via `TempData["FlashSuccess"]` / `FlashWarning`.
+- **Defensive empty states** — every list view has a clear CTA when empty.
+
+---
+
+## 10. Assumptions & trade-offs
 
 - **No authentication.** `DeletedBy` is hardcoded to `"system"`. In a
   production system this would come from `HttpContext.User`.
@@ -327,7 +353,7 @@ the jsDelivr CDN — no extra build step.
 
 ---
 
-## 10. What I would improve with more time
+## 11. What I would improve with more time
 
 - **Real authentication / authorisation** so `DeletedBy` is meaningful
   and the Audit page is gated to admins only.
@@ -346,7 +372,36 @@ the jsDelivr CDN — no extra build step.
 
 ---
 
-## 11. AI usage disclosure
+## 12. Tests
+
+A focused xUnit test suite lives under `Tests/ProviderAssignmentStarter.Tests/`
+and runs against **real SQLite (in-memory)** so what is under test is the
+exact save pipeline that runs in production.
+
+| Test class | What it proves |
+|---|---|
+| `SoftDeleteInterceptorTests` | Hard-delete is impossible (row remains, IsDeleted=true). Soft-deleted Providers are hidden by the global query filter. `IgnoreQueryFilters()` surfaces them for audit. **Cascade reaches both loaded and unloaded Licenses.** Soft-deleted Licenses disappear from the parent's navigation. |
+| `AuditableInterceptorTests` | `CreatedDate` is stamped on insert and never overwritten on update. `ModifiedDate` is stamped on update. |
+| `ProviderServiceTests` | End-to-end CRUD round-trip: Create → Update → SoftDelete → Restore. Soft-deleted providers vanish from `ListAsync`, appear in `ListDeletedAsync`, return null from `GetDetailsAsync`, and surface from `GetDetailsIncludingDeletedAsync`. |
+| `ScenarioQueryTests` | The two analytical scenarios the assignment requires: active providers with currently-valid licenses, and active providers whose licenses are all expired. |
+| `NotInPastAttributeTests` | The custom `[NotInPast]` validation attribute correctly rejects past dates on Create, accepts today/future, and skips validation in Edit mode. |
+
+Run with `dotnet test` from the repo root.
+
+The test infrastructure uses a `TestDb` helper that opens a fresh
+`DataSource=:memory:` SQLite connection per test, wires both production
+interceptors, and runs `EnsureCreated()` so each test starts from a
+clean schema with no shared state.
+
+The EF Core *InMemory* provider was deliberately not used here -- it
+ignores relational features (CHECK constraints, unique indexes,
+real `WHERE` clauses) and the global query filter behaves slightly
+differently. Real SQLite gives confidence that what passes locally will
+also pass in production.
+
+---
+
+## 13. AI usage disclosure
 
 In line with the assignment's section 2: AI assistance was used during
 this build (code drafting, schema review, README scaffolding). Every

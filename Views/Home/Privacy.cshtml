@@ -1,6 +1,35 @@
-﻿@{
-    ViewData["Title"] = "Privacy Policy";
+@{
+    ViewData["Title"] = "About this Application";
 }
-<h1>@ViewData["Title"]</h1>
 
-<p>Use this page to detail your site's privacy policy.</p>
+<h1 class="h3 mb-3">About this Application</h1>
+
+<p class="text-muted">
+    This is a take-home assignment submission for a Senior Full-Stack
+    .NET Modernization Developer position. It is a self-contained demo
+    application; no real personal data is collected, transmitted, or
+    stored.
+</p>
+
+<h2 class="h5 mt-4">Stack</h2>
+<ul>
+    <li>ASP.NET Core MVC (.NET 8) with Razor views</li>
+    <li>Entity Framework Core with the SQLite provider</li>
+    <li>Bootstrap 5 for layout, Chart.js for the dashboard</li>
+    <li>xUnit + FluentAssertions for the test suite</li>
+</ul>
+
+<h2 class="h5 mt-4">Data handling</h2>
+<p>
+    The application uses a local SQLite database (<code>Data/providers.db</code>)
+    seeded with synthetic provider records. <strong>No data leaves the local
+    machine.</strong> Soft-deleted rows remain in the database for audit
+    purposes and can be inspected on the
+    <a asp-controller="Providers" asp-action="Deleted">Audit page</a>.
+</p>
+
+<h2 class="h5 mt-4">Source</h2>
+<p>
+    See the project <code>README.md</code> for architecture, soft-delete
+    design rationale, run instructions, and trade-offs.
+</p>

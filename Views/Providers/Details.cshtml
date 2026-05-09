@@ -42,7 +42,11 @@
 
 @if (!Model.Licenses.Any())
 {
-    <div class="alert alert-light border">No licenses on file for this provider.</div>
+    <div class="alert alert-light border d-flex justify-content-between align-items-center">
+        <span class="text-muted">No licenses on file for this provider.</span>
+        <a asp-controller="Licenses" asp-action="Create" asp-route-providerId="@Model.ProviderId"
+           class="btn btn-sm btn-primary">+ Add the first license</a>
+    </div>
 }
 else
 {

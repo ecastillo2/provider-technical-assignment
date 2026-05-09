@@ -19,6 +19,15 @@ public interface IProviderRepository
     /// </summary>
     Task<IReadOnlyList<Provider>> GetAllWithLicensesAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// Filtered listing - free-text against name/county and optional status.
+    /// Filtering happens in SQL so we never pull and discard.
+    /// </summary>
+    Task<IReadOnlyList<Provider>> SearchAsync(
+        string? search,
+        Domain.Enums.ProviderStatus? status,
+        CancellationToken ct = default);
+
     /// <summary>Single provider by id, or null if missing or soft-deleted.</summary>
     Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default);
 

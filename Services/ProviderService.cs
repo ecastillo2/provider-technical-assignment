@@ -19,6 +19,14 @@ public class ProviderService : IProviderService
         return providers.Select(p => p.ToListItem()).ToList();
     }
 
+    public async Task<IReadOnlyList<ProviderListItemVm>> SearchAsync(
+        ProviderListFilter filter,
+        CancellationToken ct = default)
+    {
+        var providers = await _repo.SearchAsync(filter.Search, filter.Status, ct);
+        return providers.Select(p => p.ToListItem()).ToList();
+    }
+
     public async Task<IReadOnlyList<ProviderListItemVm>> ListDeletedAsync(CancellationToken ct = default)
     {
         var deleted = await _repo.GetDeletedAsync(ct);

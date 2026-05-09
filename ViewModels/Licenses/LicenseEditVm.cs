@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using ProviderAssignmentStarter.Domain.Enums;
+using ProviderAssignmentStarter.ViewModels.Validation;
 
 namespace ProviderAssignmentStarter.ViewModels.Licenses;
 
@@ -25,5 +26,7 @@ public class LicenseEditVm
     [Required]
     [DataType(DataType.Date)]
     [Display(Name = "Expiration Date")]
+    [NotInPast(SkipIfIdProperty = nameof(LicenseId),
+               ErrorMessage = "Expiration date must be today or a future date.")]
     public DateTime ExpirationDate { get; set; } = DateTime.UtcNow.Date.AddYears(1);
 }
