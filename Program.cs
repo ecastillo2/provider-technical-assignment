@@ -86,17 +86,33 @@ using (var scope = app.Services.CreateScope())
 // ---------- 6. HTTP pipeline ----------
 //
 // Middleware order is intentional and follows ASP.NET Core defaults:
-//   - Exception handler / HSTS in production
-//   - HTTPS redirect
+//   - Developer exception page (dev only) OR ExceptionHandler (everywhere
+//     else). The two are mutually exclusive: DeveloperExceptionPage gives
+//     us a stack trace at /any path; ExceptionHandler swaps the response
+//     for the friendly /Home/Error page.
+//   - StatusCodePagesWithReExecute catches non-success status codes that
+//     made it past the pipeline body unhandled (404 from routing,
+//     403 from authorization, etc.) and re-executes the request against
+//     /Home/Error/{0} so the user sees the same shell.
+//   - HSTS / HTTPS redirect
 //   - Static files (served before routing for performance)
 //   - Routing
 //   - Authorization (no-op today; placeholder for future auth)
 //   - Endpoint mapping
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+else
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+
+// Surface non-2xx responses (404, 403, 500, ...) through the same
+// friendly Error view. Must come BEFORE UseRouting so it can wrap the
+// downstream pipeline.
+app.UseStatusCodePagesWithReExecute("/Home/Error/{0}");
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();

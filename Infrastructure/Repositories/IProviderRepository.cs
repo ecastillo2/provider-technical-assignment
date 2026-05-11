@@ -1,4 +1,5 @@
 using ProviderAssignmentStarter.Domain.Entities;
+using ProviderAssignmentStarter.ViewModels.Paging;
 
 namespace ProviderAssignmentStarter.Infrastructure.Repositories;
 
@@ -47,6 +48,19 @@ public interface IProviderRepository
         Domain.Enums.ProviderStatus? status,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Paged variant of <see cref="SearchAsync"/>. Composes the same
+    /// IQueryable, runs <c>CountAsync</c> against it for the total, then
+    /// returns only the requested slice via <c>Skip/Take</c>. Both round-
+    /// trips honour the global query filter.
+    /// </summary>
+    Task<PagedResult<Provider>> SearchPagedAsync(
+        string? search,
+        Domain.Enums.ProviderStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
     /// <summary>Single provider by id, or null if missing or soft-deleted.</summary>
     Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default);
 
@@ -66,6 +80,20 @@ public interface IProviderRepository
 
     /// <summary>Audit listing: soft-deleted providers only, newest first.</summary>
     Task<IReadOnlyList<Provider>> GetDeletedAsync(CancellationToken ct = default);
+
+    /// <summary>Paged variant of <see cref="GetDeletedAsync"/>.</summary>
+    Task<PagedResult<Provider>> GetDeletedPagedAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Streams every non-deleted provider as the database produces it,
+    /// without materialising the whole result into a <c>List&lt;T&gt;</c>.
+    /// Use for bulk exports / large reads where the caller does not need
+    /// the entire collection at once.
+    /// </summary>
+    IAsyncEnumerable<Provider> StreamAllAsync(CancellationToken ct = default);
 
     /// <summary>Audit fetch: any provider (deleted or not), with licenses.</summary>
     Task<Provider?> GetByIdIncludingDeletedAsync(int providerId, CancellationToken ct = default);

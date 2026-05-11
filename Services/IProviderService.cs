@@ -1,3 +1,4 @@
+using ProviderAssignmentStarter.ViewModels.Paging;
 using ProviderAssignmentStarter.ViewModels.Providers;
 
 namespace ProviderAssignmentStarter.Services;
@@ -36,6 +37,29 @@ public interface IProviderService
 
     /// <summary>Audit listing: soft-deleted providers only.</summary>
     Task<IReadOnlyList<ProviderListItemVm>> ListDeletedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Paged listing for the main grid. Honours the same filter as
+    /// <see cref="SearchAsync"/>. Returns the slice plus paging metadata.
+    /// </summary>
+    Task<PagedResult<ProviderListItemVm>> GetPageAsync(
+        ProviderListFilter filter,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Paged variant of <see cref="ListDeletedAsync"/>.</summary>
+    Task<PagedResult<ProviderListItemVm>> GetDeletedPageAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Streams non-deleted provider list-items without buffering — backed
+    /// by EF Core's <c>AsAsyncEnumerable</c>. Used for export endpoints
+    /// and any bulk consumer that processes rows one at a time.
+    /// </summary>
+    IAsyncEnumerable<ProviderListItemVm> StreamListItemsAsync(CancellationToken ct = default);
 
     /// <summary>Details VM for a non-deleted provider, or null if missing/deleted.</summary>
     Task<ProviderDetailsVm?> GetDetailsAsync(int providerId, CancellationToken ct = default);

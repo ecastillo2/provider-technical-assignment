@@ -91,24 +91,35 @@ WHERE   p.IsDeleted   = 0
 
 -- vw_ActiveProvidersWithExpiredLicenses -------------------------------
 -- The 'looks active but really isn't' scenario the assignment calls
--- out: provider is recorded as Active, but every one of their licenses
+-- out: provider is recorded as Active, but EVERY one of their licenses
 -- is either expired-by-status OR past its expiration date.
+--
+-- One row per qualifying provider. We deliberately do NOT join Licenses
+-- in the SELECT — a join would multiply rows per provider AND would
+-- silently change the semantics from 'all expired' to 'any expired'
+-- (which is the bug a previous revision of this view shipped with).
+-- The NOT EXISTS clause is what enforces the 'all expired' semantic:
+-- a provider qualifies only when no currently-valid license exists.
 CREATE VIEW vw_ActiveProvidersWithExpiredLicenses AS
 SELECT  p.ProviderId,
         p.ProviderName,
         p.County,
-        p.Status            AS ProviderStatus,
-        l.LicenseId,
-        l.LicenseNumber,
-        l.LicenseStatus,
-        l.ExpirationDate
+        p.Status AS ProviderStatus
 FROM    Providers p
-JOIN    Licenses  l ON l.ProviderId = p.ProviderId
 WHERE   p.IsDeleted = 0
-  AND   l.IsDeleted = 0
   AND   p.Status    = 'Active'
-  AND ( l.LicenseStatus = 'Expired'
-        OR date(l.ExpirationDate) < date('now') );
+  AND   EXISTS (
+            SELECT 1 FROM Licenses l
+            WHERE l.ProviderId = p.ProviderId
+              AND l.IsDeleted  = 0
+        )
+  AND NOT EXISTS (
+            SELECT 1 FROM Licenses l
+            WHERE l.ProviderId   = p.ProviderId
+              AND l.IsDeleted    = 0
+              AND l.LicenseStatus <> 'Expired'
+              AND date(l.ExpirationDate) >= date('now')
+        );
 ";
         await db.Database.ExecuteSqlRawAsync(sql);
     }

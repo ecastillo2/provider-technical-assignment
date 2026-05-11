@@ -1,6 +1,8 @@
-@model IReadOnlyList<ProviderListItemVm>
+@using ProviderAssignmentStarter.ViewModels.Paging
+@model PagedResult<ProviderListItemVm>
 @{
     ViewData["Title"] = "Audit · Deleted Providers";
+    var rows = Model.Items;
 }
 
 <h1 class="h3 mb-3">Audit · Deleted Providers</h1>
@@ -10,7 +12,7 @@
     remain in the database for audit and may be restored.
 </p>
 
-@if (!Model.Any())
+@if (!rows.Any())
 {
     <div class="alert alert-info mb-0">
         <strong>Nothing in the audit bin.</strong>
@@ -35,7 +37,7 @@ else
                 </tr>
             </thead>
             <tbody>
-            @foreach (var p in Model)
+            @foreach (var p in rows)
             {
                 <tr>
                     <td>@p.ProviderName</td>
@@ -54,4 +56,9 @@ else
             </tbody>
         </table>
     </div>
+
+    @await Html.PartialAsync("_Pager", new PagerModel(Model, new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["pageSize"] = Model.PageSize
+    }))
 }

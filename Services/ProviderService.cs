@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using ProviderAssignmentStarter.Domain.Entities;
 using ProviderAssignmentStarter.Infrastructure.Repositories;
 using ProviderAssignmentStarter.Services.Mapping;
+using ProviderAssignmentStarter.ViewModels.Paging;
 using ProviderAssignmentStarter.ViewModels.Providers;
 
 namespace ProviderAssignmentStarter.Services;
@@ -43,6 +45,41 @@ public class ProviderService : IProviderService
         // Audit pathway. The repository call uses .IgnoreQueryFilters().
         var deleted = await _repo.GetDeletedAsync(ct);
         return deleted.Select(p => p.ToListItem()).ToList();
+    }
+
+    public async Task<PagedResult<ProviderListItemVm>> GetPageAsync(
+        ProviderListFilter filter,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        // Repository pages the query at the SQL layer (Skip/Take +
+        // CountAsync). The service maps the materialised slice into VMs.
+        var paged = await _repo.SearchPagedAsync(filter.Search, filter.Status, page, pageSize, ct);
+        return paged.Map(p => p.ToListItem());
+    }
+
+    public async Task<PagedResult<ProviderListItemVm>> GetDeletedPageAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var paged = await _repo.GetDeletedPagedAsync(page, pageSize, ct);
+        return paged.Map(p => p.ToListItem());
+    }
+
+    /// <summary>
+    /// Streaming variant of <see cref="ListAsync"/>. Rows flow from EF
+    /// (via <c>AsAsyncEnumerable</c>) through the mapper to the caller
+    /// one at a time — nothing is buffered into a <c>List&lt;T&gt;</c>.
+    /// </summary>
+    public async IAsyncEnumerable<ProviderListItemVm> StreamListItemsAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var p in _repo.StreamAllAsync(ct).WithCancellation(ct))
+        {
+            yield return p.ToListItem();
+        }
     }
 
     public async Task<ProviderDetailsVm?> GetDetailsAsync(int providerId, CancellationToken ct = default)

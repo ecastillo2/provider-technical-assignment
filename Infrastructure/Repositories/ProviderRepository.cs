@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ProviderAssignmentStarter.Domain.Entities;
 using ProviderAssignmentStarter.Domain.Enums;
 using ProviderAssignmentStarter.Infrastructure.Data;
+using ProviderAssignmentStarter.ViewModels.Paging;
 
 namespace ProviderAssignmentStarter.Infrastructure.Repositories;
 
@@ -59,6 +60,39 @@ public class ProviderRepository : IProviderRepository
         ProviderStatus? status,
         CancellationToken ct = default)
     {
+        var query = BuildSearchQuery(search, status);
+        return await query.OrderBy(p => p.ProviderName).ToListAsync(ct);
+    }
+
+    public async Task<PagedResult<Provider>> SearchPagedAsync(
+        string? search,
+        ProviderStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = BuildSearchQuery(search, status).OrderBy(p => p.ProviderName);
+
+        // Two round-trips against the SAME composed IQueryable:
+        //   1) CountAsync materialises a SELECT COUNT(*) — no rows shipped.
+        //   2) Skip/Take/ToListAsync materialises just the requested slice.
+        // The database does the heavy lifting; we never pull-and-discard.
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new PagedResult<Provider>(items, page, pageSize, total);
+    }
+
+    /// <summary>
+    /// Shared composition for <see cref="SearchAsync"/> and
+    /// <see cref="SearchPagedAsync"/>. Returns an <c>IQueryable</c> so the
+    /// caller can decide whether to materialise, page, or stream.
+    /// </summary>
+    private IQueryable<Provider> BuildSearchQuery(string? search, ProviderStatus? status)
+    {
         // Build the query progressively. Each filter is only applied
         // when it has a value, so an empty filter falls through to the
         // same query GetAllWithLicensesAsync would emit.
@@ -84,8 +118,20 @@ public class ProviderRepository : IProviderRepository
             query = query.Where(p => p.Status == status.Value);
         }
 
-        return await query.OrderBy(p => p.ProviderName).ToListAsync(ct);
+        return query;
     }
+
+    /// <summary>
+    /// Streaming read: rows flow from EF as the underlying data reader
+    /// produces them. The caller iterates with <c>await foreach</c> and
+    /// nothing is buffered into a <c>List&lt;T&gt;</c>.
+    /// </summary>
+    public IAsyncEnumerable<Provider> StreamAllAsync(CancellationToken ct = default) =>
+        _db.Providers
+            .AsNoTracking()
+            .Include(p => p.Licenses)
+            .OrderBy(p => p.ProviderName)
+            .AsAsyncEnumerable();
 
     public Task<Provider?> GetByIdAsync(int providerId, CancellationToken ct = default) =>
         // Tracked, no Include — used for Update and "lightweight" reads.
@@ -102,12 +148,36 @@ public class ProviderRepository : IProviderRepository
     // ============================================================
 
     public async Task<IReadOnlyList<Provider>> GetDeletedAsync(CancellationToken ct = default) =>
-        await _db.Providers
-            .IgnoreQueryFilters()         // see soft-deleted rows
-            .AsNoTracking()
-            .Where(p => p.IsDeleted)      // and ONLY soft-deleted rows
-            .OrderByDescending(p => p.DeletedDate)
+        await BuildDeletedQuery().ToListAsync(ct);
+
+    public async Task<PagedResult<Provider>> GetDeletedPagedAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = BuildDeletedQuery();
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
+
+        return new PagedResult<Provider>(items, page, pageSize, total);
+    }
+
+    /// <summary>
+    /// Shared composition for the audit listing. Eager-loads Licenses so
+    /// the list-item VM can render true license counts (without this
+    /// Include, .Licenses materialises as empty under no-lazy-loading and
+    /// the counts come out as 0).
+    /// </summary>
+    private IQueryable<Provider> BuildDeletedQuery() =>
+        _db.Providers
+            .IgnoreQueryFilters()              // see soft-deleted rows
+            .AsNoTracking()
+            .Include(p => p.Licenses)          // counts accurate on the audit grid
+            .Where(p => p.IsDeleted)           // and ONLY soft-deleted rows
+            .OrderByDescending(p => p.DeletedDate);
 
     public Task<Provider?> GetByIdIncludingDeletedAsync(int providerId, CancellationToken ct = default) =>
         _db.Providers

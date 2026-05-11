@@ -1,5 +1,8 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using ProviderAssignmentStarter.Services;
+using ProviderAssignmentStarter.ViewModels.Paging;
 using ProviderAssignmentStarter.ViewModels.Providers;
 
 namespace ProviderAssignmentStarter.Controllers;
@@ -50,13 +53,16 @@ public class ProvidersController : Controller
     /// </summary>
     public async Task<IActionResult> Index(
         [FromQuery] ProviderListFilter? filter,
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
         CancellationToken ct = default)
     {
         filter ??= new ProviderListFilter();
 
-        var rows = filter.HasFilter
-            ? await _providers.SearchAsync(filter, ct)
-            : await _providers.ListAsync(ct);
+        var p  = Paging.NormalizePage(page);
+        var ps = Paging.NormalizePageSize(pageSize);
+
+        var rows = await _providers.GetPageAsync(filter, p, ps, ct);
 
         // Stash the filter in ViewData so the form on the page can
         // re-render its inputs with the current values.
@@ -156,10 +162,69 @@ public class ProvidersController : Controller
     // ============================================================
 
     /// <summary>GET /Providers/Deleted — audit listing of soft-deleted providers.</summary>
-    public async Task<IActionResult> Deleted(CancellationToken ct)
+    public async Task<IActionResult> Deleted(
+        [FromQuery] int? page,
+        [FromQuery] int? pageSize,
+        CancellationToken ct = default)
     {
-        var rows = await _providers.ListDeletedAsync(ct);
+        var p  = Paging.NormalizePage(page);
+        var ps = Paging.NormalizePageSize(pageSize);
+
+        var rows = await _providers.GetDeletedPageAsync(p, ps, ct);
         return View(rows);
+    }
+
+    // ============================================================
+    //  Streaming export
+    // ============================================================
+
+    /// <summary>
+    /// GET /Providers/Export — streams a CSV of all non-deleted providers.
+    ///
+    /// Implementation notes:
+    /// <list type="bullet">
+    ///   <item>Disables HTTP response buffering so each row goes down the
+    ///         wire as it is produced.</item>
+    ///   <item>Pulls rows from EF via <c>IAsyncEnumerable</c>; no
+    ///         <c>ToListAsync</c>, no in-memory accumulation.</item>
+    ///   <item>Writes directly to <c>Response.Body</c> so the framework
+    ///         does not collect bytes in an action result first.</item>
+    /// </list>
+    /// </summary>
+    [HttpGet]
+    public async Task Export(CancellationToken ct)
+    {
+        Response.ContentType = "text/csv; charset=utf-8";
+        Response.Headers.ContentDisposition = "attachment; filename=\"providers.csv\"";
+
+        // Tell the server to flush bytes as they're written rather than
+        // accumulating them. Without this, Kestrel may buffer the whole
+        // body before sending the first byte.
+        var bodyFeature = HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>();
+        bodyFeature?.DisableBuffering();
+
+        await using var writer = new StreamWriter(Response.Body, Encoding.UTF8, leaveOpen: true);
+
+        await writer.WriteLineAsync(
+            "ProviderId,ProviderName,County,Status,TotalLicenses,ActiveLicenses,ExpiredLicenses,CreatedDate");
+
+        await foreach (var row in _providers.StreamListItemsAsync(ct).WithCancellation(ct))
+        {
+            await writer.WriteLineAsync(string.Create(CultureInfo.InvariantCulture,
+                $"{row.ProviderId},{Csv(row.ProviderName)},{Csv(row.County)},{row.Status},{row.TotalLicenseCount},{row.ActiveLicenseCount},{row.ExpiredLicenseCount},{row.CreatedDate:O}"));
+
+            // Periodic flush keeps the wire active for very large exports.
+            await writer.FlushAsync();
+        }
+    }
+
+    private static string Csv(string value)
+    {
+        // Minimum-correct CSV: quote when the value contains commas,
+        // quotes, or newlines; double any embedded quotes.
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var needsQuoting = value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0;
+        return needsQuoting ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
     }
 
     /// <summary>

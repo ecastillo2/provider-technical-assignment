@@ -1,0 +1,66 @@
+@*
+    Reusable pager. Renders nothing when there is at most one page.
+
+    The host view must pass a route-value dictionary so the pager can
+    preserve query-string state (filters, page size, etc.):
+
+        @await Html.PartialAsync("_Pager", new PagerModel<ProviderListItemVm> {
+            Page  = Model,
+            Route = new { Search = filter.Search, Status = filter.Status, pageSize = Model.PageSize }
+        })
+*@
+@model ProviderAssignmentStarter.ViewModels.Paging.PagerModel
+
+@if (Model.Page.TotalPages > 1)
+{
+    var currentPage = Model.Page.Page;
+    var total       = Model.Page.TotalPages;
+
+    // Bound the window of page-number links to a friendly count.
+    var windowSize = 5;
+    var from = Math.Max(1, currentPage - windowSize / 2);
+    var to   = Math.Min(total, from + windowSize - 1);
+    from = Math.Max(1, to - windowSize + 1);
+
+    <nav aria-label="Pagination" class="d-flex justify-content-between align-items-center mt-3">
+        <div class="text-muted small">
+            Showing <strong>@Model.Page.FirstItemNumber</strong>–<strong>@Model.Page.LastItemNumber</strong>
+            of <strong>@Model.Page.TotalCount</strong>
+        </div>
+        <ul class="pagination pagination-sm mb-0">
+            <li class="page-item @(Model.Page.HasPrevious ? "" : "disabled")">
+                <a class="page-link" href="@Url.Action(null, Model.RouteWithPage(currentPage - 1))" aria-label="Previous">«</a>
+            </li>
+            @if (from > 1)
+            {
+                <li class="page-item"><a class="page-link" href="@Url.Action(null, Model.RouteWithPage(1))">1</a></li>
+                if (from > 2)
+                {
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                }
+            }
+            @for (var i = from; i <= to; i++)
+            {
+                if (i == currentPage)
+                {
+                    <li class="page-item active" aria-current="page"><span class="page-link">@i</span></li>
+                }
+                else
+                {
+                    <li class="page-item"><a class="page-link" href="@Url.Action(null, Model.RouteWithPage(i))">@i</a></li>
+                }
+            }
+            @if (to < total)
+            {
+                if (to < total - 1)
+                {
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                }
+                <li class="page-item"><a class="page-link" href="@Url.Action(null, Model.RouteWithPage(total))">@total</a></li>
+            }
+            <li class="page-item @(Model.Page.HasNext ? "" : "disabled")">
+                <a class="page-link" href="@Url.Action(null, Model.RouteWithPage(currentPage + 1))" aria-label="Next">»</a>
+            </li>
+        </ul>
+    </nav>
+}

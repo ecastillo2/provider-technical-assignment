@@ -14,7 +14,8 @@
       "Bash(dotnet build *)",
       "Bash(powershell.exe -Command \"Get-NetTCPConnection -LocalPort 5236 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess,State; Get-Process -Id \\(Get-NetTCPConnection -LocalPort 5236 -ErrorAction SilentlyContinue\\).OwningProcess -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Path\")",
       "Bash(powershell.exe *)",
-      "Bash(dotnet test *)"
+      "Bash(dotnet test *)",
+      "Bash(grep *)"
     ]
   }
 }

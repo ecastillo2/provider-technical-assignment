@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using ProviderAssignmentStarter.Models;
 
@@ -10,9 +11,9 @@ namespace ProviderAssignmentStarter.Controllers
     /// </summary>
     /// <remarks>
     /// Functionality lives entirely in the views — there is no business
-    /// logic in the home flow. The Error action exists so the global
-    /// exception handler in <c>Program.cs</c> has a route to redirect to
-    /// in non-development environments.
+    /// logic in the home flow. The Error action is the single landing
+    /// point for both unhandled exceptions (UseExceptionHandler) and
+    /// non-success status codes (UseStatusCodePagesWithReExecute).
     /// </remarks>
     public class HomeController : Controller
     {
@@ -40,14 +41,79 @@ namespace ProviderAssignmentStarter.Controllers
         }
 
         /// <summary>
-        /// GET /Home/Error — generic error landing. Surfaces the request
-        /// id so server logs can be correlated with whatever the user
-        /// saw on screen.
+        /// GET /Home/Error or /Home/Error/{statusCode} — generic error
+        /// landing.
+        ///
+        /// Pulls the original exception (when present, set by
+        /// <c>UseExceptionHandler</c>) and the re-executed path (set by
+        /// <c>UseStatusCodePagesWithReExecute</c>) and surfaces a friendly
+        /// page plus a request id for log correlation. The exception
+        /// itself is logged so an operator can find it without trusting
+        /// the user to copy a request id.
         /// </summary>
+        [Route("Home/Error/{statusCode:int?}")]
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Error()
+        public IActionResult Error(int? statusCode)
         {
-            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+            var requestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+
+            var exFeature = HttpContext.Features.Get<IExceptionHandlerPathFeature>();
+            var reFeature = HttpContext.Features.Get<IStatusCodeReExecuteFeature>();
+
+            var (title, message) = ResolveCopy(statusCode, exFeature is not null);
+            var originalPath = exFeature?.Path ?? reFeature?.OriginalPath;
+
+            if (exFeature?.Error is { } error)
+            {
+                _logger.LogError(
+                    error,
+                    "Unhandled exception on {Path}. RequestId={RequestId}",
+                    originalPath ?? "(unknown)",
+                    requestId);
+            }
+            else if (statusCode is int sc and >= 400)
+            {
+                _logger.LogWarning(
+                    "Status {StatusCode} returned for {Path}. RequestId={RequestId}",
+                    sc,
+                    originalPath ?? "(unknown)",
+                    requestId);
+
+                Response.StatusCode = sc;
+            }
+
+            return View(new ErrorViewModel
+            {
+                RequestId    = requestId,
+                StatusCode   = statusCode,
+                Title        = title,
+                Message      = message,
+                OriginalPath = originalPath,
+            });
+        }
+
+        private static (string Title, string Message) ResolveCopy(int? statusCode, bool hadException)
+        {
+            if (hadException)
+            {
+                return (
+                    "Something went wrong",
+                    "An unexpected error occurred while processing your request. Our team has been notified.");
+            }
+
+            return statusCode switch
+            {
+                400 => ("Bad request",     "The request was malformed or missing required information."),
+                401 => ("Sign-in required","You need to sign in to view that page."),
+                403 => ("Access denied",   "You do not have permission to view that page."),
+                404 => ("Page not found",  "The page you’re looking for doesn’t exist or was moved."),
+                408 => ("Request timed out","The server took too long to respond. Please try again."),
+                500 => ("Server error",    "The server ran into a problem. Please try again in a moment."),
+                502 => ("Bad gateway",     "An upstream service responded incorrectly."),
+                503 => ("Service unavailable","The service is temporarily unavailable. Please try again shortly."),
+                _   => ("Something went wrong",
+                        "An unexpected error occurred while processing your request."),
+            };
         }
     }
 }
