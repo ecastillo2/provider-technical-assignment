@@ -35,4 +35,8 @@
     <None Remove="Tests\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Assignment\" />
+  </ItemGroup>
+
 </Project>

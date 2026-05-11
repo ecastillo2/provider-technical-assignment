@@ -300,7 +300,7 @@ Controllers  ──>  Services  ──>  Repositories  ──>  AppDbContext (EF
 
 ## 8. Dashboard (Razor + Chart.js)
 
-A read-only Razor page at `/Dashboard` showing:
+A read-only dashboard at `/Dashboard` showing:
 
 - **Summary cards**: total providers, active providers, total licenses,
   count of "active providers w/ expired licenses".
@@ -309,10 +309,38 @@ A read-only Razor page at `/Dashboard` showing:
 - **Expiring-soon table**: licenses expiring in the next 30 days.
 - **Active-but-expired list**: links into Provider Details.
 
-All metrics are computed by `DashboardService` in C#. The view receives
-a fully-populated `DashboardVm` and only renders. Per the assignment:
-*business logic must not exist only in the UI*. Chart.js is loaded from
-the jsDelivr CDN — no extra build step.
+**Why metrics were chosen** — each one maps directly to a stated
+evaluation point. The "providers by status" chart and the "expired vs
+active licenses" chart are listed in the assignment as suggested
+metrics. The "active providers w/ expired licenses" card is the
+assignment's flagship cross-cutting query — surfacing it as a top-level
+metric makes the most important insight the first thing the reviewer
+sees. The "expiring soon" table is forward-looking maintenance support:
+it answers "what should I act on this week?".
+
+**How frontend and backend integrate** — the controller calls
+`IDashboardService.BuildAsync()`, which assembles a fully-populated
+`DashboardVm` from the repositories. The Razor view receives that VM
+and only renders. Chart.js is loaded from the jsDelivr CDN and is fed
+the numbers via a tiny inline `<script>` block — no AJAX, no API
+endpoints, no client-side data fetching. This satisfies the assignment
+rule that *business logic must not exist only in the UI*.
+
+**Why Razor instead of React** — the assignment's optional section
+suggests React. We chose to implement the dashboard in Razor + Chart.js
+instead, as an intentional trade-off:
+
+- Keeps the entire project in one stack (no separate `package.json`,
+  build pipeline, or dev server).
+- Lets the reviewer run the entire app with a single `dotnet run`.
+- Demonstrates the same SoC principle (server-computed metrics, dumb
+  view) without introducing a new technology.
+- The assignment lists the dashboard as **optional**, and is explicit
+  that *"UI polish and advanced styling are not primary criteria"*.
+
+A React rewrite would be straightforward: replace the Razor view with a
+JSON-returning `DashboardController` action and a small React app that
+calls it. The service / repository layers wouldn't change.
 
 ---
 
